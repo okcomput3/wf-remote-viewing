@@ -21,6 +21,9 @@
 
 int workspaceX_pos=0;
 
+// Global scale factor - change this to scale everything
+constexpr float WORKSPACE_SCALE = 1.0f; // 50% scale
+
 namespace wf
 {
     wf::geometry_t add_offset_to_target(const wf::geometry_t& target, int offset_x, int offset_y)
@@ -125,12 +128,21 @@ namespace wf
         wf::geometry_t get_workspace_rectangle(const wf::point_t& ws) const
         {
             auto size = this->output->get_screen_size();
+            
+            // Apply scale to workspace dimensions
+            int scaled_width = static_cast<int>(size.width * WORKSPACE_SCALE);
+            int scaled_height = static_cast<int>(size.height * WORKSPACE_SCALE);
+            
+            // Always right-align: position from right edge
+            // For workspace 0: x = size.width - scaled_width
+            // For workspace 1: x = 2 * size.width - scaled_width, etc.
+            int x_pos = (ws.x + 1) * size.width - scaled_width;
 
             return {
-                ws.x * (size.width + gap_size),
-                ws.y * (size.height + gap_size),
-                size.width,
-                size.height
+                x_pos + ws.x * gap_size,
+                ws.y * (scaled_height + gap_size),
+                scaled_width,
+                scaled_height
             };
         }
 
@@ -138,12 +150,16 @@ namespace wf
         {
             auto size = this->output->get_screen_size();
             auto workspace_size = this->output->wset()->get_workspace_grid_size();
+            
+            // Apply scale to wall dimensions
+            int scaled_width = static_cast<int>(size.width * WORKSPACE_SCALE);
+            int scaled_height = static_cast<int>(size.height * WORKSPACE_SCALE);
 
             return {
-                -gap_size,
-                -gap_size,
-                workspace_size.width * (size.width + gap_size) + gap_size,
-                workspace_size.height * (size.height + gap_size) + gap_size
+                0,  // Start at 0 to keep left-aligned
+                0,  // Start at 0 to keep top-aligned
+                workspace_size.width * (scaled_width + gap_size),
+                workspace_size.height * (scaled_height + gap_size)
             };
         }
 
@@ -216,11 +232,19 @@ namespace wf
                 wf::geometry_t get_workspace_rect(wf::point_t ws)
                 {
                     auto output_size = self->wall->output->get_screen_size();
+                    
+                    // Apply scale to workspace rect
+                    int scaled_width = static_cast<int>(output_size.width * WORKSPACE_SCALE);
+                    int scaled_height = static_cast<int>(output_size.height * WORKSPACE_SCALE);
+                    
+                    // Always right-align: position from right edge
+                    int x_pos = ((ws.x + 1) * output_size.width - scaled_width);
+                    
                     return {
-                        .x     = ws.x * (output_size.width + self->wall->gap_size),
-                        .y     = ws.y * (output_size.height + self->wall->gap_size),
-                        .width = output_size.width,
-                        .height = output_size.height,
+                        .x     = x_pos + ws.x * self->wall->gap_size,
+                        .y     = ws.y * (scaled_height + self->wall->gap_size),
+                        .width = scaled_width,
+                        .height = scaled_height,
                     };
                 };
 
@@ -253,9 +277,6 @@ namespace wf
                                 push_damage(our_damage);
                             };
 
-//self->workspaces[1][j]
-
-//printf("cws = %s\n",cws );
                             self->workspaces[workspaceX_pos][j]->gen_render_instances(instances[i][j],
                                 push_damage_child, self->wall->output);
                         }
@@ -278,71 +299,83 @@ namespace wf
                         .data     = render_tag{FRAME_EV, 0.0},
                     });
 
-             // Scale damage to be in the workspace's coordinate system
+                // Scale damage to be in the workspace's coordinate system
+                wf::region_t workspaces_damage;
+                for (auto& rect : damage)
+                {
+                    auto box = wlr_box_from_pixman_box(rect);
+                    wf::geometry_t A = self->get_bounding_box();
+                    wf::geometry_t B = self->wall->viewport;
 
-            wf::geometry_t sample_workspace = get_workspace_rect({0, 0});
-
-            wf::region_t workspaces_damage;
-            for (auto& rect : damage)
-            {
-                auto box = wlr_box_from_pixman_box(rect);
-                wf::geometry_t A = self->get_bounding_box();
-                wf::geometry_t B = self->wall->viewport;
-
-                // Adjust the box by subtracting 300 from the x-coordinate
-                box.x -= sample_workspace.width/2;
-              //  box.width -= 300;
-
-                workspaces_damage |= scale_box(A, B, box);
-            }
-
-
-
-
+                    workspaces_damage |= scale_box(A, B, box);
+                }
 
                 for (int i = 0; i < 1; i++)
                 {
                     for (int j = 0; j < (int)self->workspaces[i].size(); j++)
                     {
-                        // Compute render target: a subbuffer of the target buffer
-                        // which corresponds to the region occupied by the
-                        // workspace.
-                        wf::render_target_t our_target = target;
-                        our_target.geometry =
-                            self->workspaces[i][j]->get_bounding_box();
-
                         wf::geometry_t workspace_rect = get_workspace_rect({i, j});
-                        wf::geometry_t relative_to_viewport;
+                        
+                        // Compute render target: render the full workspace but scale it down
+                        wf::render_target_t our_target = target;
+                        
+                        // The geometry should be the full unscaled workspace size
+                        auto full_size = self->wall->output->get_screen_size();
+                        our_target.geometry = {0, 0, full_size.width, full_size.height};
 
-                        relative_to_viewport= scale_box(
-                            self->wall->viewport, target.geometry,{ workspace_rect.x - workspace_rect.width/2,workspace_rect.y,workspace_rect.width,workspace_rect.height} /*workspace_rect*/);
+                        // Use the x-offset calculation approach from original code
+                        wf::geometry_t relative_to_viewport = scale_box(
+                            self->wall->viewport, 
+                            target.geometry,
+                            { workspace_rect.x - workspace_rect.width/2,
+                              workspace_rect.y,
+                              workspace_rect.width,
+                              workspace_rect.height});
 
                         relative_to_viewport = add_offset_to_target(relative_to_viewport, workspace_rect.width/2, 0);
                                          
                         our_target.subbuffer = target.framebuffer_box_from_geometry_box(relative_to_viewport);
 
+                        // Workspace rect for damage calculation
                         wf::geometry_t workspace_rect2;
-                        workspace_rect2.x = workspace_rect.x - workspace_rect.width/2 ;
+                        workspace_rect2.x = workspace_rect.x - workspace_rect.width;
                         workspace_rect2.y = workspace_rect.y;
                         workspace_rect2.width = workspace_rect.width;
                         workspace_rect2.height = workspace_rect.height;
 
-                        // Take the damage for the workspace in workspace-local coordindates, as the workspace
-                        // stream node expects.
+                        // Take the damage for the workspace in workspace-local coordinates
                         wf::region_t our_damage = workspaces_damage & workspace_rect2;
-                          // Adjust the damage here with - workspace_rect.width/2
-                        // Assuming our_damage is in a coordinate system compatible with the offset
-
                         workspaces_damage ^= our_damage;
                         our_damage += -wf::origin(workspace_rect2);
 
-
+                          // The damage region in wall coordinates (scaled positions)
+                       
+                        for (auto& rect : workspaces_damage)
+                        {
+                            wf::geometry_t box = wlr_box_from_pixman_box(rect);
+                            
+                            // Check if this damage intersects with this workspace's scaled area
+                            if (box.x < workspace_rect.x + workspace_rect.width &&
+                                box.x + box.width > workspace_rect.x &&
+                                box.y < workspace_rect.y + workspace_rect.height &&
+                                box.y + box.height > workspace_rect.y)
+                            {
+                                // Transform from scaled wall coordinates to unscaled workspace coordinates
+                                wf::geometry_t ws_damage;
+                                ws_damage.x = static_cast<int>((box.x - workspace_rect.x) / WORKSPACE_SCALE);
+                                ws_damage.y = static_cast<int>((box.y - workspace_rect.y) / WORKSPACE_SCALE);
+                                ws_damage.width = static_cast<int>(box.width / WORKSPACE_SCALE);
+                                ws_damage.height = static_cast<int>(box.height / WORKSPACE_SCALE);
+                                
+                                our_damage |= ws_damage;
+                            }
+                        }
 
                         // Dim workspaces at the end (the first instruction pushed is executed last)
                         instructions.push_back(scene::render_instruction_t{
                                 .instance = this,
                                 .target   = our_target,
-                                .damage   = our_damage ,
+                                .damage   = our_damage,
                                 .data     = render_tag{TAG_WS_DIM,
                                     self->wall->get_color_for_workspace({i, j})},
                             });
@@ -354,18 +387,7 @@ namespace wf
                         }
                     }
                 }
-
- /*               auto bbox = self->get_bounding_box();
-
-                instructions.push_back(scene::render_instruction_t{
-                        .instance = this,
-                        .target   = target,
-                        .damage   = damage & self->get_bounding_box(),
-                        .data     = render_tag{TAG_BACKGROUND, 0.0},
-                    });
-
-                damage ^= bbox;
-*/            }
+            }
 
 
                 void render(const wf::render_target_t& target,
