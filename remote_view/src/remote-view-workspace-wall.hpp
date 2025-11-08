@@ -18,11 +18,12 @@
 #include "wayfire/signal-provider.hpp"
 #include "wayfire/workspace-stream.hpp"
 #include "wayfire/workspace-set.hpp"
+#include "remoteview.hpp"
 
 int workspaceX_pos=0;
 
 // Global scale factor - change this to scale everything
-constexpr float WORKSPACE_SCALE = 0.75f; // 50% scale
+ // 50% scale
 
 namespace wf
 {
