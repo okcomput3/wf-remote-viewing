@@ -22,7 +22,7 @@
 int workspaceX_pos=0;
 
 // Global scale factor - change this to scale everything
-constexpr float WORKSPACE_SCALE = 1.0f; // 50% scale
+constexpr float WORKSPACE_SCALE = 0.75f; // 50% scale
 
 namespace wf
 {
@@ -125,26 +125,25 @@ namespace wf
             }
         }
 
-        wf::geometry_t get_workspace_rectangle(const wf::point_t& ws) const
-        {
-            auto size = this->output->get_screen_size();
-            
-            // Apply scale to workspace dimensions
-            int scaled_width = static_cast<int>(size.width * WORKSPACE_SCALE);
-            int scaled_height = static_cast<int>(size.height * WORKSPACE_SCALE);
-            
-            // Always right-align: position from right edge
-            // For workspace 0: x = size.width - scaled_width
-            // For workspace 1: x = 2 * size.width - scaled_width, etc.
-            int x_pos = (ws.x + 1) * size.width - scaled_width;
+      wf::geometry_t get_workspace_rectangle(const wf::point_t& ws) const
+{
+    auto size = this->output->get_screen_size();
+    
+    // Apply scale to workspace dimensions
+    int scaled_width = static_cast<int>(size.width * WORKSPACE_SCALE);
+    int scaled_height = static_cast<int>(size.height * WORKSPACE_SCALE);
+    
+    // Right-align: each workspace's right edge should be (ws.x + 1) * output_size.width - scaled_width; at (ws.x + 1) * size.width
+    int right_edge = (ws.x + 1) * size.width / WORKSPACE_SCALE + size.width * (-2.75 * (WORKSPACE_SCALE*WORKSPACE_SCALE) + 4.625 * WORKSPACE_SCALE - 1.875);
+    int x_pos = right_edge - scaled_width;
 
-            return {
-                x_pos + ws.x * gap_size,
-                ws.y * (scaled_height + gap_size),
-                scaled_width,
-                scaled_height
-            };
-        }
+    return {
+        x_pos + ws.x,
+        ws.y * (scaled_height + gap_size),
+        scaled_width,
+        scaled_height
+    };
+}
 
         wf::geometry_t get_wall_rectangle() const
         {
@@ -229,24 +228,25 @@ namespace wf
                     push_damage(ev->region);
                 };
 
-                wf::geometry_t get_workspace_rect(wf::point_t ws)
-                {
-                    auto output_size = self->wall->output->get_screen_size();
-                    
-                    // Apply scale to workspace rect
-                    int scaled_width = static_cast<int>(output_size.width * WORKSPACE_SCALE);
-                    int scaled_height = static_cast<int>(output_size.height * WORKSPACE_SCALE);
-                    
-                    // Always right-align: position from right edge
-                    int x_pos = ((ws.x + 1) * output_size.width - scaled_width);
-                    
-                    return {
-                        .x     = x_pos + ws.x * self->wall->gap_size,
-                        .y     = ws.y * (scaled_height + self->wall->gap_size),
-                        .width = scaled_width,
-                        .height = scaled_height,
-                    };
-                };
+              wf::geometry_t get_workspace_rect(wf::point_t ws)
+{
+    auto output_size = self->wall->output->get_screen_size();
+    
+    // Apply scale to workspace rect
+    int scaled_width = static_cast<int>(output_size.width * WORKSPACE_SCALE);
+    int scaled_height = static_cast<int>(output_size.height * WORKSPACE_SCALE);
+    
+    // Right-align: each workspace's right edge should be at (ws.x + 1) * output_size.width / WORKSPACE_SCALE
+    int right_edge = (ws.x + 1) * output_size.width / WORKSPACE_SCALE + output_size.width * (-2.75 * (WORKSPACE_SCALE*WORKSPACE_SCALE) + 4.625 * WORKSPACE_SCALE - 1.875);
+    int x_pos = right_edge - scaled_width;
+    
+    return {
+        .x     = x_pos + ws.x ,
+        .y     = ws.y * (scaled_height + self->wall->gap_size),
+        .width = scaled_width,
+        .height = scaled_height,
+    };
+};
 
             public:
                 wwall_render_instance_t(workspace_wall_node_second_t *self,
